@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Price Predictor - LSTM</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.10.0/tf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #060606 0%, #000000 50%, #01a601 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #000000;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Simplified background particles */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(0, 0, 0, 0.2) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(46, 46, 46, 0.2) 0%, transparent 50%);
+            animation: float 30s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 30px;
+            padding: 30px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideInUp 0.8s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            animation: fadeInDown 1s ease-out;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.8em;
+            margin-bottom: 12px;
+            background: linear-gradient(45deg, #84f3a1, #01a116, #28ee88);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            font-size: 1em;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .data-source {
+            margin-top: 15px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.9em;
+            color: rgba(255, 255, 255, 0.8);
+            transition: all 0.3s ease;
+        }
+
+        .data-source.real {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: rgba(76, 175, 80, 0.4);
+            color: #4CAF50;
+        }
+
+        .data-source.synthetic {
+            background: rgba(255, 152, 0, 0.2);
+            border-color: rgba(255, 152, 0, 0.4);
+            color: #FF9800;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideInLeft 0.8s ease-out 0.2s both;
+        }
+
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .control-group label {
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1em;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-group select,
+        .control-group input {
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #333;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .control-group select:focus,
+        .control-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .btn {
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #66ea6f, #03a01d);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.3s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        .btn:disabled {
+            background: linear-gradient(45deg, #ccc, #999);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .chart-container {
+            margin-top: 30px;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            height: 400px;
+            position: relative;
+            animation: slideInRight 0.8s ease-out 0.4s both;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .status {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+            animation: bounceIn 0.6s ease-out;
+            backdrop-filter: blur(10px);
+        }
+
+        @keyframes bounceIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.3);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.05);
+            }
+            70% {
+                transform: scale(0.9);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .status.loading {
+            background: linear-gradient(45deg, rgba(227, 242, 253, 0.9), rgba(25, 118, 210, 0.9));
+            color: white;
+            border: 1px solid rgba(25, 118, 210, 0.3);
+        }
+
+        .status.success {
+            background: linear-gradient(45deg, rgba(232, 245, 232, 0.9), rgba(46, 125, 50, 0.9));
+            color: white;
+            border: 1px solid rgba(46, 125, 50, 0.3);
+        }
+
+        .status.error {
+            background: linear-gradient(45deg, rgba(255, 235, 238, 0.9), rgba(198, 40, 40, 0.9));
+            color: white;
+            border: 1px solid rgba(198, 40, 40, 0.3);
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-top: 25px;
+            animation: fadeInUp 0.8s ease-out 0.6s both;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.9), rgba(1, 141, 50, 0.9));
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.4s;
+        }
+
+        .metric-card:hover::before {
+            transform: translateX(100%);
+        }
+
+        .metric-card:hover {
+            transform: translateY(-10px) scale(1.05);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .metric-card h3 {
+            font-size: 1.1em;
+            margin-bottom: 12px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .metric-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            animation: numberCount 1s ease-out;
+        }
+
+        @keyframes numberCount {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 25px;
+            height: 25px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Floating elements animation */
+        .floating {
+            animation: floating 4s ease-in-out infinite;
+        }
+
+        @keyframes floating {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+        }
+
+        /* Glow effect for interactive elements */
+        .glow {
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+
+        /* Scroll animations */
+        .scroll-fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease-out;
+        }
+
+        .scroll-fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .scroll-slide-up {
+            opacity: 0;
+            transform: translateY(50px);
+            transition: all 0.8s ease-out;
+        }
+
+        .scroll-slide-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .scroll-slide-down {
+            opacity: 0;
+            transform: translateY(-50px);
+            transition: all 0.8s ease-out;
+        }
+
+        .scroll-slide-down.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Responsive design improvements */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2.5em;
+            }
+            
+            .controls {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header scroll-slide-down">
+            <h1 class="floating">🚀 Stock Price Predictor</h1>
+            <p>AI-Powered LSTM Neural Network for Stock Market Predictions</p>
+            <div id="dataSource" class="data-source">
+                <span id="dataSourceText">📊 Loading data source...</span>
+            </div>
+        </div>
+
+        <div class="controls scroll-fade-in">
+            <div class="control-group">
+                <label for="stockSymbol">Stock Symbol</label>
+                <select id="stockSymbol">
+                    <option value="AAPL">Apple (AAPL)</option>
+                    <option value="GOOGL">Google (GOOGL)</option>
+                    <option value="MSFT">Microsoft (MSFT)</option>
+                    <option value="AMZN">Amazon (AMZN)</option>
+                    <option value="TSLA">Tesla (TSLA)</option>
+                    <option value="META">Meta (META)</option>
+                    <option value="NVDA">NVIDIA (NVDA)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="sequenceLength">Sequence Length (days)</label>
+                <input type="number" id="sequenceLength" value="20" min="10" max="30">
+            </div>
+            
+            <div class="control-group">
+                <label for="predictionDays">Prediction Days</label>
+                <input type="number" id="predictionDays" value="30" min="1" max="60">
+            </div>
+            
+            <div class="control-group">
+                <button id="predictBtn" class="btn">Predict Stock Price</button>
+            </div>
+        </div>
+
+        <div id="status" class="status hidden scroll-fade-in"></div>
+
+        <div class="chart-container scroll-slide-up">
+            <canvas id="priceChart"></canvas>
+        </div>
+
+        <div id="metrics" class="metrics hidden scroll-fade-in">
+            <div class="metric-card">
+                <h3>🎯 Accuracy</h3>
+                <div class="value" id="accuracy">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>📊 RMSE</h3>
+                <div class="value" id="rmse">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>💰 Predicted Price</h3>
+                <div class="value" id="nextPrice">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>📈 Price Change</h3>
+                <div class="value" id="priceChange">-</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class StockPredictor {
+            constructor() {
+                this.chart = null;
+                this.model = null;
+                this.scaler = { min: 0, max: 1, scale: 1 };
+                this.isTraining = false;
+                this.tensorflowReady = false;
+                this.initializeTensorFlow();
+                this.initializeChart();
+                this.setupEventListeners();
+                this.addHoverEffects();
+                this.setupScrollAnimations();
+            }
+
+            addHoverEffects() {
+                // Add glow effect on hover for interactive elements
+                const interactiveElements = document.querySelectorAll('.btn, .control-group select, .control-group input');
+                interactiveElements.forEach(element => {
+                    element.addEventListener('mouseenter', () => {
+                        element.classList.add('glow');
+                    });
+                    element.addEventListener('mouseleave', () => {
+                        element.classList.remove('glow');
+                    });
+                });
+            }
+
+            setupScrollAnimations() {
+                const observerOptions = {
+                    threshold: 0.1,
+                    rootMargin: '0px 0px -50px 0px'
+                };
+
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('visible');
+                        }
+                    });
+                }, observerOptions);
+
+                // Observe all elements with scroll animation classes
+                const animatedElements = document.querySelectorAll('.scroll-fade-in, .scroll-slide-up, .scroll-slide-down');
+                animatedElements.forEach(el => observer.observe(el));
+            }
+
+            async initializeTensorFlow() {
+                try {
+                    // Force CPU backend to avoid WebGL issues
+                    await tf.setBackend('cpu');
+                    await tf.ready();
+                    this.tensorflowReady = true;
+                    console.log('TensorFlow.js initialized with CPU backend');
+                } catch (error) {
+                    console.error('TensorFlow initialization error:', error);
+                    this.showStatus('❌ TensorFlow initialization failed. Please refresh the page.', 'error');
+                }
+            }
+
+            initializeChart() {
+                const ctx = document.getElementById('priceChart').getContext('2d');
+                this.chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Actual Price',
+                            data: [],
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 8
+                        }, {
+                            label: 'Predicted Price',
+                            data: [],
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            borderWidth: 3,
+                            fill: false,
+                            borderDash: [8, 8],
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Stock Price Prediction',
+                                font: { size: 18, weight: 'bold' },
+                                color: '#333'
+                            },
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                title: {
+                                    display: true,
+                                    text: 'Price ($)',
+                                    font: { weight: 'bold' }
+                                },
+                                grid: {
+                                    color: 'rgba(0,0,0,0.1)'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Time',
+                                    font: { weight: 'bold' }
+                                },
+                                grid: {
+                                    color: 'rgba(0,0,0,0.1)'
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 1000,
+                            easing: 'easeInOutQuart'
+                        }
+                    }
+                });
+            }
+
+            setupEventListeners() {
+                const predictBtn = document.getElementById('predictBtn');
+                predictBtn.addEventListener('click', () => {
+                    if (!this.isTraining) {
+                        this.predict();
+                    }
+                });
+
+                // Add ripple effect to button
+                predictBtn.addEventListener('click', (e) => {
+                    const ripple = document.createElement('span');
+                    const rect = predictBtn.getBoundingClientRect();
+                    const size = Math.max(rect.width, rect.height);
+                    const x = e.clientX - rect.left - size / 2;
+                    const y = e.clientY - rect.top - size / 2;
+                    
+                    ripple.style.width = ripple.style.height = size + 'px';
+                    ripple.style.left = x + 'px';
+                    ripple.style.top = y + 'px';
+                    ripple.classList.add('ripple');
+                    
+                    predictBtn.appendChild(ripple);
+                    setTimeout(() => ripple.remove(), 600);
+                });
+            }
+
+            showStatus(message, type = 'loading') {
+                const statusEl = document.getElementById('status');
+                const predictBtn = document.getElementById('predictBtn');
+                
+                statusEl.innerHTML = type === 'loading' ? 
+                    `<span class="loading-spinner"></span>${message}` : message;
+                statusEl.className = `status ${type}`;
+                statusEl.classList.remove('hidden');
+                
+                if (type === 'loading') {
+                    predictBtn.disabled = true;
+                    predictBtn.textContent = 'Training...';
+                    this.isTraining = true;
+                } else {
+                    predictBtn.disabled = false;
+                    predictBtn.textContent = 'Predict Stock Price';
+                    this.isTraining = false;
+                }
+            }
+
+            hideStatus() {
+                document.getElementById('status').classList.add('hidden');
+            }
+
+            // Load real stock data from JSON file
+            async loadRealStockData(symbol) {
+                try {
+                    // Try to load from local JSON file
+                    const response = await fetch('real_stock_data.json');
+                    if (!response.ok) {
+                        throw new Error('Real stock data file not found. Please run fetch_stock_data.py first.');
+                    }
+                    
+                    const stockData = await response.json();
+                    console.log('Loaded stockData:', stockData); // DEBUG
+                    console.log('Looking for symbol:', symbol, 'in stockData:', Object.keys(stockData)); // DEBUG
+                    
+                    if (!stockData[symbol]) {
+                        throw new Error(`No data found for ${symbol} in real_stock_data.json. Available keys: ${Object.keys(stockData).join(', ')}`);
+                    }
+                    if (!stockData[symbol].data || !Array.isArray(stockData[symbol].data) || stockData[symbol].data.length === 0) {
+                        throw new Error(`Data array for ${symbol} is missing or empty in real_stock_data.json.`);
+                    }
+                    
+                    // Extract closing prices
+                    const prices = stockData[symbol].data.map(item => item.close);
+                    
+                    console.log(`📊 Loaded ${prices.length} real data points for ${symbol}`);
+                    console.log(`📅 Data range: ${stockData[symbol].data[0].date} to ${stockData[symbol].data[prices.length-1].date}`);
+                    console.log(`💰 Price range: $${Math.min(...prices).toFixed(2)} - $${Math.max(...prices).toFixed(2)}`);
+                    
+                    // Update data source indicator
+                    this.updateDataSourceIndicator('real', symbol, stockData[symbol].data.length);
+                    
+                    return prices;
+                    
+                } catch (error) {
+                    console.error('Error loading real stock data:', error);
+                    this.showStatus(`⚠️ Using synthetic data (${error.message})`, 'error');
+                    
+                    // Update data source indicator for synthetic data
+                    this.updateDataSourceIndicator('synthetic', symbol, 800);
+                    
+                    return this.generateSyntheticData(symbol, 800);
+                }
+            }
+
+            updateDataSourceIndicator(type, symbol, dataPoints) {
+                const dataSourceEl = document.getElementById('dataSource');
+                const dataSourceTextEl = document.getElementById('dataSourceText');
+                
+                dataSourceEl.className = `data-source ${type}`;
+                
+                if (type === 'real') {
+                    dataSourceTextEl.innerHTML = `✅ Real Market Data: ${symbol} (${dataPoints} data points)`;
+                } else {
+                    dataSourceTextEl.innerHTML = `⚠️ Synthetic Data: ${symbol} (${dataPoints} simulated points)`;
+                }
+            }
+
+            // Fallback synthetic data generator
+            generateSyntheticData(symbol, days = 800) {
+                const data = [];
+                const basePrice = {
+                    'AAPL': 150,
+                    'GOOGL': 2800,
+                    'MSFT': 300,
+                    'AMZN': 3200,
+                    'TSLA': 800,
+                    'META': 320,
+                    'NVDA': 450
+                };
+                
+                let price = basePrice[symbol] || 100;
+                const trend = (Math.random() - 0.5) * 0.001;
+                
+                for (let i = 0; i < days; i++) {
+                    // More realistic price movements
+                    const seasonality = Math.sin(i * 0.02) * (price * 0.05);
+                    const noise = (Math.random() - 0.5) * (price * 0.02);
+                    const trendComponent = trend * i * 0.1;
+                    const momentum = i > 0 ? (data[i-1] - price) * 0.1 : 0;
+                    
+                    price = Math.max(price * 0.5, price + trendComponent + seasonality + noise + momentum);
+                    data.push(price);
+                }
+                
+                return data;
+            }
+
+            normalizeData(data) {
+                if (!Array.isArray(data) || data.length === 0) {
+                    throw new Error('Invalid data for normalization');
+                }
+                
+                const min = Math.min(...data);
+                const max = Math.max(...data);
+                const scale = max - min;
+                
+                if (scale === 0) {
+                    throw new Error('Cannot normalize data with zero variance');
+                }
+                
+                this.scaler = { min, max, scale };
+                return data.map(val => (val - min) / scale);
+            }
+
+            denormalizeData(data) {
+                if (!Array.isArray(data)) {
+                    return [];
+                }
+                return data.map(val => val * this.scaler.scale + this.scaler.min);
+            }
+
+            prepareTrainingData(data, sequenceLength) {
+                const X = [];
+                const y = [];
+                
+                if (data.length < sequenceLength + 1) {
+                    throw new Error('Not enough data for the given sequence length');
+                }
+                
+                for (let i = sequenceLength; i < data.length; i++) {
+                    X.push(data.slice(i - sequenceLength, i));
+                    y.push(data[i]);
+                }
+                
+                return { X, y };
+            }
+
+            async createModel(sequenceLength) {
+                // Dispose of existing model if it exists
+                if (this.model) {
+                    this.model.dispose();
+                }
+                
+                const model = tf.sequential();
+                
+                // Smaller, more efficient model to avoid WebGL issues
+                model.add(tf.layers.lstm({
+                    units: 16, // Reduced from 32
+                    returnSequences: true,
+                    inputShape: [sequenceLength, 1],
+                    kernelInitializer: 'glorotUniform', // Avoid orthogonal initializer
+                    recurrentInitializer: 'glorotUniform',
+                    dropout: 0.1,
+                    recurrentDropout: 0.1
+                }));
+                
+                model.add(tf.layers.lstm({
+                    units: 16, // Reduced from 32
+                    returnSequences: false,
+                    kernelInitializer: 'glorotUniform', // Avoid orthogonal initializer
+                    recurrentInitializer: 'glorotUniform',
+                    dropout: 0.1,
+                    recurrentDropout: 0.1
+                }));
+                
+                model.add(tf.layers.dense({ 
+                    units: 8, // Reduced from 16
+                    activation: 'relu',
+                    kernelInitializer: 'glorotUniform'
+                }));
+                
+                model.add(tf.layers.dense({ 
+                    units: 1,
+                    kernelInitializer: 'glorotUniform'
+                }));
+                
+                model.compile({
+                    optimizer: tf.train.adam(0.001),
+                    loss: 'meanSquaredError',
+                    metrics: ['mae']
+                });
+                
+                return model;
+            }
+
+            async predict() {
+                // Check if TensorFlow is ready
+                if (!this.tensorflowReady) {
+                    this.showStatus('⏳ Waiting for TensorFlow to initialize...', 'loading');
+                    await this.waitForTensorFlow();
+                }
+                
+                const symbol = document.getElementById('stockSymbol').value;
+                const sequenceLength = Math.min(30, parseInt(document.getElementById('sequenceLength').value)); // Limit sequence length
+                const predictionDays = parseInt(document.getElementById('predictionDays').value);
+                
+                // Validate inputs
+                if (sequenceLength < 10 || sequenceLength > 30) {
+                    this.showStatus('Sequence length must be between 10 and 30 for optimal performance', 'error');
+                    return;
+                }
+                
+                if (predictionDays < 1 || predictionDays > 100) {
+                    this.showStatus('Prediction days must be between 1 and 100', 'error');
+                    return;
+                }
+                
+                let trainXTensor, trainYTensor, testXTensor, predictions;
+                
+                try {
+                    this.showStatus('🔄 Loading real stock data...', 'loading');
+                    await this.sleep(100);
+                    
+                    // Load real stock data
+                    const rawData = await this.loadRealStockData(symbol);
+                    const normalizedData = this.normalizeData(rawData);
+                    
+                    this.showStatus('📊 Preparing training data...', 'loading');
+                    await this.sleep(100);
+                    
+                    // Split data
+                    const trainSize = Math.floor(normalizedData.length * 0.8);
+                    const trainData = normalizedData.slice(0, trainSize);
+                    const testData = normalizedData.slice(trainSize);
+                    
+                    // Prepare training data
+                    const { X: trainX, y: trainY } = this.prepareTrainingData(trainData, sequenceLength);
+                    const { X: testX, y: testY } = this.prepareTrainingData(testData, sequenceLength);
+                    
+                    if (trainX.length < 50) {
+                        throw new Error('Not enough training data. Try reducing sequence length.');
+                    }
+                    
+                    this.showStatus('🤖 Creating optimized LSTM model...', 'loading');
+                    await this.sleep(100);
+                    
+                    // Create and train model
+                    this.model = await this.createModel(sequenceLength);
+                    
+                    // Convert to tensors with smaller batch size
+                    const batchSize = Math.min(16, Math.floor(trainX.length / 8)); // Smaller batch size
+                    trainXTensor = tf.tensor3d(trainX.map(seq => seq.map(val => [val])));
+                    trainYTensor = tf.tensor2d(trainY.map(val => [val]));
+                    
+                    this.showStatus('🧠 Training neural network (CPU optimized)...', 'loading');
+                    
+                    // Train model with smaller epochs and batch size
+                    const history = await this.model.fit(trainXTensor, trainYTensor, {
+                        epochs: 10, // Reduced from 15
+                        batchSize: batchSize,
+                        validationSplit: 0.2,
+                        verbose: 0,
+                        callbacks: {
+                            onEpochEnd: (epoch, logs) => {
+                                const loss = logs.loss.toFixed(6);
+                                const valLoss = logs.val_loss ? logs.val_loss.toFixed(6) : 'N/A';
+                                this.showStatus(`🔥 Training... Epoch ${epoch + 1}/10 (Loss: ${loss}, Val Loss: ${valLoss})`, 'loading');
+                            }
+                        }
+                    });
+                    
+                    this.showStatus('🎯 Making predictions...', 'loading');
+                    await this.sleep(100);
+                    
+                    // Make predictions on test data
+                    if (testX.length > 0) {
+                        testXTensor = tf.tensor3d(testX.map(seq => seq.map(val => [val])));
+                        predictions = this.model.predict(testXTensor);
+                        const predictionData = await predictions.data();
+                        
+                        // Denormalize predictions
+                        const actualPrices = this.denormalizeData(testY);
+                        const predictedPrices = this.denormalizeData(Array.from(predictionData));
+                        
+                        // Calculate metrics
+                        const rmse = Math.sqrt(actualPrices.reduce((sum, actual, i) => 
+                            sum + Math.pow(actual - predictedPrices[i], 2), 0) / actualPrices.length);
+                        
+                        const meanPrice = actualPrices.reduce((sum, val) => sum + val, 0) / actualPrices.length;
+                        const accuracy = Math.max(0, 100 - (rmse / meanPrice * 100));
+                        
+                        // Multi-step future predictions
+                        const lastSequence = normalizedData.slice(-sequenceLength);
+                        const futurePredictions = await this.predictFutureNDays(lastSequence, predictionDays);
+                        const futurePrices = this.denormalizeData(futurePredictions);
+                        const futurePriceActual = futurePrices[futurePrices.length - 1];
+                        const currentPrice = this.denormalizeData([normalizedData[normalizedData.length - 1]])[0];
+                        const priceChange = ((futurePriceActual - currentPrice) / currentPrice * 100);
+                        
+                        // Update UI
+                        this.updateChart(actualPrices, predictedPrices, symbol);
+                        this.updateMetrics(accuracy, rmse, futurePriceActual, priceChange);
+                        this.updateFutureTable(futurePrices);
+                        
+                        this.showStatus('✅ Prediction completed successfully!', 'success');
+                        
+                    } else {
+                        throw new Error('No test data available');
+                    }
+                    
+                } catch (error) {
+                    console.error('Prediction error:', error);
+                    this.showStatus(`❌ Error: ${error.message}`, 'error');
+                } finally {
+                    // Clean up tensors
+                    if (trainXTensor) trainXTensor.dispose();
+                    if (trainYTensor) trainYTensor.dispose();
+                    if (testXTensor) testXTensor.dispose();
+                    if (predictions) predictions.dispose();
+                }
+            }
+
+            async waitForTensorFlow() {
+                let attempts = 0;
+                const maxAttempts = 10;
+                
+                while (!this.tensorflowReady && attempts < maxAttempts) {
+                    await this.sleep(500);
+                    attempts++;
+                }
+                
+                if (!this.tensorflowReady) {
+                    throw new Error('TensorFlow initialization timeout');
+                }
+            }
+
+            async predictFuture(sequence) {
+                try {
+                    const inputTensor = tf.tensor3d([sequence.map(val => [val])]);
+                    const prediction = this.model.predict(inputTensor);
+                    const result = await prediction.data();
+                    
+                    inputTensor.dispose();
+                    prediction.dispose();
+                    
+                    return result[0];
+                } catch (error) {
+                    console.error('Future prediction error:', error);
+                    return sequence[sequence.length - 1]; // Return last known value as fallback
+                }
+            }
+
+            // Multi-step future prediction
+            async predictFutureNDays(sequence, n) {
+                let seq = sequence.slice();
+                const preds = [];
+                for (let i = 0; i < n; i++) {
+                    const next = await this.predictFuture(seq);
+                    preds.push(next);
+                    seq = seq.slice(1).concat([next]);
+                }
+                return preds;
+            }
+
+            // Add a table to show all future predictions
+            updateFutureTable(futurePrices) {
+                let table = document.getElementById('futureTable');
+                if (!table) {
+                    table = document.createElement('div');
+                    table.id = 'futureTable';
+                    table.style.margin = '30px 0';
+                    table.style.padding = '20px';
+                    table.style.background = 'rgba(255,255,255,0.08)';
+                    table.style.borderRadius = '15px';
+                    table.style.backdropFilter = 'blur(8px)';
+                    table.style.color = '#222';
+                    table.style.fontSize = '1.1em';
+                    table.style.overflowX = 'auto';
+                    document.querySelector('.container').appendChild(table);
+                }
+                let html = `<b>Future Price Predictions:</b><br/><table style="width:100%;margin-top:10px;"><tr><th>Day Ahead</th><th>Predicted Price</th></tr>`;
+                for (let i = 0; i < futurePrices.length; i++) {
+                    html += `<tr><td>${i+1}</td><td>$${futurePrices[i].toFixed(2)}</td></tr>`;
+                }
+                html += '</table>';
+                table.innerHTML = html;
+            }
+
+            updateChart(actual, predicted, symbol) {
+                const maxPoints = 100; // Limit points for better performance
+                const actualSliced = actual.slice(-maxPoints);
+                const predictedSliced = predicted.slice(-maxPoints);
+                const labels = actualSliced.map((_, i) => `Day ${i + 1}`);
+                
+                this.chart.data.labels = labels;
+                this.chart.data.datasets[0].data = actualSliced;
+                this.chart.data.datasets[1].data = predictedSliced;
+                this.chart.data.datasets[0].label = `Actual ${symbol} Price`;
+                this.chart.data.datasets[1].label = `Predicted ${symbol} Price`;
+                this.chart.update('active');
+            }
+
+            updateMetrics(accuracy, rmse, nextPrice, priceChange) {
+                document.getElementById('accuracy').textContent = `${Math.max(0, accuracy).toFixed(1)}%`;
+                document.getElementById('rmse').textContent = rmse.toFixed(2);
+                document.getElementById('nextPrice').textContent = `${nextPrice.toFixed(2)}`;
+                document.getElementById('priceChange').textContent = `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%`;
+                document.getElementById('priceChange').style.color = priceChange >= 0 ? '#4CAF50' : '#F44336';
+                
+                document.getElementById('metrics').classList.remove('hidden');
+            }
+
+            // Helper function for delays
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add CPU backend detection message
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = '🔧 Initializing CPU-optimized TensorFlow...';
+            statusEl.className = 'status loading';
+            statusEl.classList.remove('hidden');
+            
+            // Initialize with delay to ensure TensorFlow loads
+            setTimeout(() => {
+                new StockPredictor();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
